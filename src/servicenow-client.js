@@ -8,9 +8,13 @@
 import axios from 'axios';
 
 export class ServiceNowClient {
-  constructor(instanceUrl, username, password) {
+  constructor(instanceUrl, username, password, options = {}) {
     this.currentInstanceName = 'default';
-    this.setInstance(instanceUrl, username, password);
+    this.oauthToken = null;
+    this.oauthRefreshToken = null;
+    this.oauthTokenExpiry = null;
+    this.oauthConfig = null;
+    this.setInstance(instanceUrl, username, password, null, options);
     this.progressCallback = null; // Callback for progress notifications
   }
 
@@ -38,23 +42,165 @@ export class ServiceNowClient {
    * @param {string} username - Username
    * @param {string} password - Password
    * @param {string} instanceName - Optional instance name for tracking
+   * @param {object} options - Optional config (authType, clientId, clientSecret)
    */
-  setInstance(instanceUrl, username, password, instanceName = null) {
+  setInstance(instanceUrl, username, password, instanceName = null, options = {}) {
     this.instanceUrl = instanceUrl.replace(/\/$/, ''); // Remove trailing slash
-    this.auth = Buffer.from(`${username}:${password}`).toString('base64');
+    this.username = username;
+    this.password = password;
+    this.authType = options.authType || 'basic';
 
     if (instanceName) {
       this.currentInstanceName = instanceName;
     }
 
+    if (this.authType === 'oauth') {
+      this.oauthConfig = {
+        clientId: options.clientId,
+        clientSecret: options.clientSecret,
+        scope: options.scope
+      };
+      // Clear any stale token so the next request triggers a fresh grant
+      this.oauthToken = null;
+      this.oauthRefreshToken = null;
+      this.oauthTokenExpiry = null;
+    } else {
+      this.auth = Buffer.from(`${username}:${password}`).toString('base64');
+      this.oauthConfig = null;
+    }
+
+    this._createClient();
+  }
+
+  /**
+   * Create (or recreate) the axios client with the current auth config.
+   * For OAuth, attaches request/response interceptors for token lifecycle.
+   */
+  _createClient() {
     this.client = axios.create({
       baseURL: this.instanceUrl,
       headers: {
-        'Authorization': `Basic ${this.auth}`,
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       }
     });
+
+    // Request interceptor — attach the right Authorization header
+    this.client.interceptors.request.use(async (config) => {
+      if (this.authType === 'oauth') {
+        const token = await this._getOAuthToken();
+        config.headers['Authorization'] = `Bearer ${token}`;
+      } else {
+        config.headers['Authorization'] = `Basic ${this.auth}`;
+      }
+      return config;
+    });
+
+    // Response interceptor — refresh on 401 and retry once
+    this.client.interceptors.response.use(
+      (response) => response,
+      async (error) => {
+        const originalRequest = error.config;
+        if (
+          this.authType === 'oauth' &&
+          error.response?.status === 401 &&
+          !originalRequest._oauthRetry
+        ) {
+          originalRequest._oauthRetry = true;
+          // Force token refresh
+          this.oauthToken = null;
+          this.oauthTokenExpiry = null;
+          const token = await this._getOAuthToken();
+          originalRequest.headers['Authorization'] = `Bearer ${token}`;
+          return this.client.request(originalRequest);
+        }
+        throw error;
+      }
+    );
+  }
+
+  /**
+   * Get a valid OAuth access token, requesting or refreshing as needed.
+   * Uses ServiceNow's /oauth_token.do endpoint.
+   * @returns {Promise<string>} Access token
+   */
+  async _getOAuthToken() {
+    // Return cached token if still valid (with 30s buffer)
+    if (this.oauthToken && this.oauthTokenExpiry && Date.now() < this.oauthTokenExpiry - 30000) {
+      return this.oauthToken;
+    }
+
+    const tokenUrl = `${this.instanceUrl}/oauth_token.do`;
+
+    // Try refresh token first if we have one
+    if (this.oauthRefreshToken) {
+      try {
+        const response = await axios.post(tokenUrl, new URLSearchParams({
+          grant_type: 'refresh_token',
+          client_id: this.oauthConfig.clientId,
+          client_secret: this.oauthConfig.clientSecret,
+          refresh_token: this.oauthRefreshToken
+        }).toString(), {
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+        });
+
+        return this._handleTokenResponse(response.data);
+      } catch (refreshError) {
+        // Refresh token expired or invalid — fall through to password grant
+        console.error('OAuth refresh failed, requesting new token:', refreshError.message);
+        this.oauthRefreshToken = null;
+      }
+    }
+
+    // Resource Owner Password Credentials grant
+    const params = {
+      grant_type: 'password',
+      client_id: this.oauthConfig.clientId,
+      client_secret: this.oauthConfig.clientSecret,
+      username: this.username,
+      password: this.password
+    };
+    if (this.oauthConfig.scope) {
+      params.scope = this.oauthConfig.scope;
+    }
+
+    try {
+      const response = await axios.post(tokenUrl, new URLSearchParams(params).toString(), {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+      });
+
+      return this._handleTokenResponse(response.data);
+    } catch (error) {
+      const detail = error.response?.data?.error_description || error.message;
+      throw new Error(`OAuth token request failed: ${detail}`);
+    }
+  }
+
+  /**
+   * Process an OAuth token response and cache the credentials.
+   * @param {object} data - Token endpoint response
+   * @returns {string} Access token
+   */
+  _handleTokenResponse(data) {
+    this.oauthToken = data.access_token;
+    this.oauthRefreshToken = data.refresh_token || this.oauthRefreshToken;
+    // expires_in is in seconds
+    this.oauthTokenExpiry = Date.now() + (data.expires_in || 1800) * 1000;
+    return this.oauthToken;
+  }
+
+  /**
+   * Get the current Authorization header value.
+   * For OAuth, returns the cached token (does not refresh — use _getOAuthToken for that).
+   * Useful for one-off axios instances that need the current auth.
+   * @returns {Promise<string>} Authorization header value
+   */
+  async getAuthHeader() {
+    if (this.authType === 'oauth') {
+      const token = await this._getOAuthToken();
+      return `Bearer ${token}`;
+    }
+    return `Basic ${this.auth}`;
   }
 
   /**
@@ -64,7 +210,8 @@ export class ServiceNowClient {
   getCurrentInstance() {
     return {
       name: this.currentInstanceName,
-      url: this.instanceUrl
+      url: this.instanceUrl,
+      authType: this.authType || 'basic'
     };
   }
 
@@ -114,10 +261,11 @@ export class ServiceNowClient {
       const updateSet = await this.getRecord('sys_update_set', updateSetSysId);
 
       // Create axios client with UI session
+      const authHeader = await this.getAuthHeader();
       const axiosWithCookies = axios.create({
         baseURL: this.instanceUrl,
         headers: {
-          'Authorization': `Basic ${this.auth}`,
+          'Authorization': authHeader,
           'Content-Type': 'application/json',
           'Accept': 'application/json',
           'User-Agent': 'ServiceNow-MCP-Client/2.0'
@@ -236,10 +384,11 @@ gs.info('✅ Update set changed to: ${updateSet.name}');`;
       }
 
       // Create axios client with cookie jar
+      const authHeader = await this.getAuthHeader();
       const axiosWithCookies = axios.create({
         baseURL: this.instanceUrl,
         headers: {
-          'Authorization': `Basic ${this.auth}`,
+          'Authorization': authHeader,
           'Content-Type': 'application/json',
           'User-Agent': 'ServiceNow-MCP-Client/2.0'
         },

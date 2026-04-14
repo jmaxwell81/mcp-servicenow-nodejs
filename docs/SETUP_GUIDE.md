@@ -96,9 +96,20 @@ pkill -f "node src/server.js"
 
 Make sure your `.env` file contains:
 ```
-SERVICENOW_INSTANCE_URL=https://dev276360.service-now.com
+SERVICENOW_INSTANCE_URL=https://your-instance.service-now.com
 SERVICENOW_USERNAME=admin
-SERVICENOW_PASSWORD=$h4fG+9nAGeU
+SERVICENOW_PASSWORD=your-password
 PORT=3000
 DEBUG=true
 ```
+
+### OAuth Environment Variables (Optional)
+
+For OAuth authentication via `.env` (single-instance fallback), add:
+```
+SERVICENOW_AUTH_TYPE=oauth
+SERVICENOW_CLIENT_ID=your-oauth-client-id
+SERVICENOW_CLIENT_SECRET=your-oauth-client-secret
+```
+
+For multi-instance setups, configure OAuth per-instance in `config/servicenow-instances.json` instead. See [Multi-Instance Configuration](MULTI_INSTANCE_CONFIGURATION.md#oauth-authentication).

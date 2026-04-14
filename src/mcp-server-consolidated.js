@@ -1280,7 +1280,12 @@ export async function createMcpServer(serviceNowClient) {
           const instance = configManager.getInstance(instance_name);
 
           // Switch the client to the new instance
-          serviceNowClient.setInstance(instance.url, instance.username, instance.password, instance.name);
+          serviceNowClient.setInstance(instance.url, instance.username, instance.password, instance.name, {
+            authType: instance.authType || 'basic',
+            clientId: instance.clientId,
+            clientSecret: instance.clientSecret,
+            scope: instance.scope
+          });
 
           console.error(`🔄 Switched to instance: ${instance.name} (${instance.url})`);
 

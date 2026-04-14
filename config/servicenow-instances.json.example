@@ -23,6 +23,17 @@
       "password": "test_password",
       "default": false,
       "description": "Test instance"
+    },
+    {
+      "name": "staging-oauth",
+      "url": "https://staging789.service-now.com",
+      "username": "oauth_user",
+      "password": "oauth_password",
+      "authType": "oauth",
+      "clientId": "your_oauth_client_id",
+      "clientSecret": "your_oauth_client_secret",
+      "default": false,
+      "description": "Staging instance with OAuth authentication"
     }
   ]
 }

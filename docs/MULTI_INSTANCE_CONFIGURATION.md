@@ -24,12 +24,30 @@ Create `config/servicenow-instances.json` with your instance credentials:
       "url": "https://yourinstance.service-now.com",
       "username": "api_user",
       "password": "prod_password",
+      "authType": "oauth",
+      "clientId": "your_oauth_client_id",
+      "clientSecret": "your_oauth_client_secret",
       "default": false,
-      "description": "Production instance"
+      "description": "Production instance (OAuth)"
     }
   ]
 }
 ```
+
+### Instance Configuration Fields
+
+| Field | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `name` | Yes | — | Unique instance identifier |
+| `url` | Yes | — | ServiceNow instance URL |
+| `username` | Yes | — | Username for authentication |
+| `password` | Yes | — | Password for authentication |
+| `authType` | No | `"basic"` | `"basic"` or `"oauth"` |
+| `clientId` | OAuth only | — | OAuth Client ID from Application Registry |
+| `clientSecret` | OAuth only | — | OAuth Client Secret |
+| `scope` | No | — | OAuth scope (optional) |
+| `default` | No | `false` | Mark as default instance |
+| `description` | No | — | Human-readable description |
 
 **Important:** The `config/servicenow-instances.json` file is gitignored to prevent committing credentials.
 
@@ -156,6 +174,53 @@ const instances = configManager.listInstances();
 2. Copy your credentials from `.env` to the JSON file
 3. Test with `npm start` - should load from JSON
 4. Optionally remove ServiceNow credentials from `.env` (keep other vars)
+
+## OAuth Authentication
+
+Each instance can independently use basic auth or OAuth 2.0. OAuth uses the Resource Owner Password Credentials grant via ServiceNow's `/oauth_token.do` endpoint.
+
+### ServiceNow Setup
+
+1. Navigate to **System OAuth > Application Registry**
+2. Click **New** > **Create an OAuth API endpoint for external clients**
+3. Set a name and note the **Client ID** and **Client Secret**
+4. Add those values to your instance config with `"authType": "oauth"`
+
+### Token Lifecycle
+
+- Tokens are requested automatically on the first API call
+- Cached in memory and refreshed before expiry (30-second buffer)
+- On 401 response, the token is refreshed and the request retried once
+- If the refresh token is expired, a fresh password grant is issued
+
+### Mixing Auth Types
+
+You can freely mix basic and OAuth instances:
+
+```json
+{
+  "instances": [
+    {
+      "name": "dev",
+      "url": "https://dev123.service-now.com",
+      "username": "admin",
+      "password": "password",
+      "default": true
+    },
+    {
+      "name": "prod",
+      "url": "https://prod456.service-now.com",
+      "username": "integration_user",
+      "password": "password",
+      "authType": "oauth",
+      "clientId": "abc...",
+      "clientSecret": "xyz..."
+    }
+  ]
+}
+```
+
+When switching instances via `SN-Set-Instance`, the server automatically uses the correct auth method for the target instance.
 
 ## Security Notes
 

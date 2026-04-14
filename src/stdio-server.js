@@ -28,7 +28,13 @@ async function main() {
     const serviceNowClient = new ServiceNowClient(
       instance.url,
       instance.username,
-      instance.password
+      instance.password,
+      {
+        authType: instance.authType || 'basic',
+        clientId: instance.clientId,
+        clientSecret: instance.clientSecret,
+        scope: instance.scope
+      }
     );
     serviceNowClient.currentInstanceName = instance.name;
 

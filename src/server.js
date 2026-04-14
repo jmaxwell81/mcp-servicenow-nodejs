@@ -33,7 +33,13 @@ console.log(`💡 Use SN-Set-Instance tool to switch instances during session`);
 const serviceNowClient = new ServiceNowClient(
   defaultInstance.url,
   defaultInstance.username,
-  defaultInstance.password
+  defaultInstance.password,
+  {
+    authType: defaultInstance.authType || 'basic',
+    clientId: defaultInstance.clientId,
+    clientSecret: defaultInstance.clientSecret,
+    scope: defaultInstance.scope
+  }
 );
 serviceNowClient.currentInstanceName = defaultInstance.name;
 

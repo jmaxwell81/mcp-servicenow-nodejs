@@ -39,6 +39,7 @@
 ## Features
 
 - **Multi-Instance Support** — Connect to multiple ServiceNow&reg; instances simultaneously with per-request routing
+- **OAuth 2.0 & Basic Auth** — Per-instance authentication with Resource Owner Password Credentials grant, automatic token refresh, and seamless fallback
 - **Intelligent Schema Discovery** — Automatically discovers table structures and relationships at runtime
 - **160+ Tables** — Complete coverage including ITSM, CMDB, Service Catalog, Platform Development, and Flow Designer
 - **44 MCP Tools** — Generic CRUD operations that work on any table, plus specialized convenience tools
@@ -100,11 +101,16 @@ Edit `config/servicenow-instances.json`:
       "name": "prod",
       "url": "https://prod789012.service-now.com",
       "username": "integration_user",
-      "password": "your-password"
+      "password": "your-password",
+      "authType": "oauth",
+      "clientId": "your-oauth-client-id",
+      "clientSecret": "your-oauth-client-secret"
     }
   ]
 }
 ```
+
+Each instance can use `"authType": "basic"` (default) or `"authType": "oauth"`. OAuth instances require `clientId` and `clientSecret` from your ServiceNow OAuth Application Registry. See [Authentication](#authentication) for details.
 
 **Option B: Single Instance (via Environment)**
 
@@ -213,6 +219,26 @@ Supports 15+ patterns including field comparisons, text searches, date ranges, l
 
 Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
+**Basic Auth:**
+
+```json
+{
+  "mcpServers": {
+    "happy-mcp-server": {
+      "command": "npx",
+      "args": ["-y", "happy-platform-mcp"],
+      "env": {
+        "SERVICENOW_INSTANCE_URL": "https://your-instance.service-now.com",
+        "SERVICENOW_USERNAME": "your-username",
+        "SERVICENOW_PASSWORD": "your-password"
+      }
+    }
+  }
+}
+```
+
+**OAuth:**
+
 ```json
 {
   "mcpServers": {
@@ -223,34 +249,70 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
         "SERVICENOW_INSTANCE_URL": "https://your-instance.service-now.com",
         "SERVICENOW_USERNAME": "your-username",
         "SERVICENOW_PASSWORD": "your-password",
-        "SERVICENOW_AUTH_TYPE": "basic"
+        "SERVICENOW_AUTH_TYPE": "oauth",
+        "SERVICENOW_CLIENT_ID": "your-client-id",
+        "SERVICENOW_CLIENT_SECRET": "your-client-secret"
       }
     }
   }
 }
 ```
 
-Or if installed from source:
+Or if installed from source, use `"command": "node"` with `"args": ["/path/to/happy-platform-mcp/src/stdio-server.js"]` and `"cwd": "/path/to/happy-platform-mcp"`.
+
+For multi-instance configurations, use `config/servicenow-instances.json` instead of environment variables. See [Configure Instances](#configure-instances).
+
+Restart Claude Desktop after editing the config.
+
+## Authentication
+
+Happy MCP Server supports two authentication methods per instance. Both can coexist — instance A can use basic auth while instance B uses OAuth.
+
+### Basic Auth (Default)
+
+No extra configuration needed. Provide `username` and `password`:
 
 ```json
 {
-  "mcpServers": {
-    "happy-mcp-server": {
-      "command": "node",
-      "args": ["/path/to/happy-platform-mcp/src/stdio-server.js"],
-      "cwd": "/path/to/happy-platform-mcp",
-      "env": {
-        "SERVICENOW_INSTANCE_URL": "https://your-instance.service-now.com",
-        "SERVICENOW_USERNAME": "your-username",
-        "SERVICENOW_PASSWORD": "your-password",
-        "SERVICENOW_AUTH_TYPE": "basic"
-      }
-    }
-  }
+  "name": "dev",
+  "url": "https://dev123456.service-now.com",
+  "username": "admin",
+  "password": "your-password",
+  "default": true
 }
 ```
 
-Restart Claude Desktop after editing the config.
+### OAuth 2.0
+
+Uses the ServiceNow [Resource Owner Password Credentials](https://www.servicenow.com/docs/r/platform-security/authentication/oauth-inbound.html) grant type. Tokens are automatically requested, cached, and refreshed.
+
+```json
+{
+  "name": "prod",
+  "url": "https://prod789012.service-now.com",
+  "username": "integration_user",
+  "password": "your-password",
+  "authType": "oauth",
+  "clientId": "your-oauth-client-id",
+  "clientSecret": "your-oauth-client-secret"
+}
+```
+
+**ServiceNow setup:**
+
+1. Navigate to **System OAuth > Application Registry**
+2. Click **New** and select **Create an OAuth API endpoint for external clients**
+3. Set a name (e.g., "MCP Server") and note the generated **Client ID** and **Client Secret**
+4. Add those values to your instance configuration
+
+**How it works:**
+
+- On first API call, requests an access token from `/oauth_token.do` using the password grant
+- Caches the token and automatically refreshes it before expiry (30-second buffer)
+- On 401 responses, transparently refreshes the token and retries the request once
+- Falls back to a fresh password grant if the refresh token is expired
+
+The `scope` field is optional and defaults to ServiceNow's standard scope.
 
 ## Architecture
 

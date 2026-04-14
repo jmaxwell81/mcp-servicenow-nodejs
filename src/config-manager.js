@@ -49,14 +49,23 @@ export class ConfigManager {
       throw new Error('Missing ServiceNow credentials. Create config/servicenow-instances.json or set SERVICENOW_INSTANCE_URL, SERVICENOW_USERNAME, SERVICENOW_PASSWORD in .env');
     }
 
-    this.instances = [{
+    const instance = {
       name: 'default',
       url: process.env.SERVICENOW_INSTANCE_URL,
       username: process.env.SERVICENOW_USERNAME,
       password: process.env.SERVICENOW_PASSWORD,
       default: true,
       description: 'Loaded from .env'
-    }];
+    };
+
+    if (process.env.SERVICENOW_AUTH_TYPE === 'oauth') {
+      instance.authType = 'oauth';
+      instance.clientId = process.env.SERVICENOW_CLIENT_ID;
+      instance.clientSecret = process.env.SERVICENOW_CLIENT_SECRET;
+      instance.scope = process.env.SERVICENOW_OAUTH_SCOPE;
+    }
+
+    this.instances = [instance];
 
     return this.instances;
   }
@@ -138,6 +147,16 @@ export class ConfigManager {
         throw new Error(`Instance configuration missing required field: ${field}`);
       }
     }
+
+    if (instance.authType === 'oauth') {
+      if (!instance.clientId) {
+        throw new Error(`OAuth instance '${instance.name}' missing required field: clientId`);
+      }
+      if (!instance.clientSecret) {
+        throw new Error(`OAuth instance '${instance.name}' missing required field: clientSecret`);
+      }
+    }
+
     return true;
   }
 }

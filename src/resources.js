@@ -168,7 +168,12 @@ export function createResourceHandlers(serviceNowClient, configManager, tableMet
     // Switch to requested instance if different
     if (instanceName !== originalInstance.name) {
       const instance = configManager.getInstance(instanceName);
-      serviceNowClient.setInstance(instance.url, instance.username, instance.password, instance.name);
+      serviceNowClient.setInstance(instance.url, instance.username, instance.password, instance.name, {
+        authType: instance.authType || 'basic',
+        clientId: instance.clientId,
+        clientSecret: instance.clientSecret,
+        scope: instance.scope
+      });
     }
 
     try {
@@ -314,7 +319,12 @@ export function createResourceHandlers(serviceNowClient, configManager, tableMet
       // Restore original instance if we switched
       if (instanceName !== originalInstance.name) {
         const original = configManager.getInstance(originalInstance.name);
-        serviceNowClient.setInstance(original.url, original.username, original.password, original.name);
+        serviceNowClient.setInstance(original.url, original.username, original.password, original.name, {
+          authType: original.authType || 'basic',
+          clientId: original.clientId,
+          clientSecret: original.clientSecret,
+          scope: original.scope
+        });
       }
     }
   };

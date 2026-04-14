@@ -914,7 +914,7 @@ All tools support the `instance` parameter to route requests to specific Service
 
 ### Configuration
 
-Set up multiple instances in `config/servicenow-instances.json`:
+Set up multiple instances in `config/servicenow-instances.json`. Each instance can use Basic Auth (default) or OAuth 2.0:
 
 ```json
 {
@@ -930,11 +930,16 @@ Set up multiple instances in `config/servicenow-instances.json`:
       "name": "prod",
       "url": "https://prod456.service-now.com",
       "username": "integration",
-      "password": "password"
+      "password": "password",
+      "authType": "oauth",
+      "clientId": "your-client-id",
+      "clientSecret": "your-client-secret"
     }
   ]
 }
 ```
+
+OAuth instances use the Resource Owner Password Credentials grant against `/oauth_token.do`. Tokens are cached, auto-refreshed, and retried on 401. See `docs/MULTI_INSTANCE_CONFIGURATION.md` for full details.
 
 ### Usage
 
